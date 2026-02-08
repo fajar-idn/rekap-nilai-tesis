@@ -10,7 +10,7 @@ st.write("Berdasarkan Format Berita Acara Magister Kimia")
 st.header("1. Identitas Mahasiswa")
 col1, col2 = st.columns(2)
 with col1:
-    nama = st.text_input("Nama Mahasiswa", "Muhammad Bima Yudha SY")
+    nama = st.text_input("Nama Mahasiswa", "Lili Tata")
     nim = st.text_input("NIM", "23/511872/PPA/06493")
 with col2:
     prodi = st.text_input("Program Studi", "Magister Kimia")
@@ -95,4 +95,5 @@ if st.button("HITUNG REKAPITULASI AKHIR", type="primary"):
         "Bobot": [1, 2, 2, 1.5, 1.5],
         "Nilai * Bobot": [n_seminar*1, rerata_p1*2, rerata_p2*2, rerata_u1*1.5, rerata_u2*1.5]
     }
+
     st.table(pd.DataFrame(data_rekap))
