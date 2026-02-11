@@ -11,51 +11,48 @@ st.set_page_config(
 )
 
 # --- KONEKSI DATABASE GOOGLE SHEETS ---
-# Pastikan di Secrets URL-nya hanya sampai /edit saja
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
     try:
-        # Load Data Mahasiswa
-        df_mhs = conn.read(worksheet="Daftar_Mahasiswa", ttl=0)
+        # Membaca data dengan nama tab baru (huruf kecil semua)
+        # ttl=0 digunakan agar data selalu refresh saat halaman dimuat ulang
+        df_mhs = conn.read(worksheet="mahasiswa", ttl=0)
+        df_dosen = conn.read(worksheet="dosen", ttl=0)
         
-        # Load Data Dosen
-        df_dosen = conn.read(worksheet="Daftar_Dosen", ttl=0)
-        
-        # Load Data Rekap (Gunakan try-except jika tab kosong/error)
         try:
-            df_rekap = conn.read(worksheet="Rekap_Nilai", ttl=0)
+            df_rekap = conn.read(worksheet="nilai", ttl=0)
         except Exception:
-            # Jika tab Rekap_Nilai tidak ditemukan/kosong, buat DataFrame kosong dengan kolom yang benar
+            # Jika tab 'nilai' masih kosong/belum ada isinya sama sekali
             df_rekap = pd.DataFrame(columns=["Timestamp", "NIM", "Nama", "Dosen", "Peran", "Rerata"])
             
         return df_mhs, df_dosen, df_rekap
     except Exception as e:
-        st.error(f"❌ Gagal Memuat Spreadsheet: {e}")
-        st.info("Pastikan: 1. Nama Tab benar, 2. URL di Secrets benar, 3. Akses Google Sheet sudah 'Anyone with link' sebagai Editor.")
+        st.error(f"❌ Koneksi Gagal: {e}")
+        st.info("Pastikan nama tab di Google Sheets adalah: 'mahasiswa', 'dosen', dan 'nilai' (semua huruf kecil).")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # Menjalankan fungsi load data
 df_mhs, df_dosen, df_rekap = load_data()
 
-# --- SIDEBAR ---
+# --- SIDEBAR NAVIGASI ---
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/id/2/25/Logougm.png", width=80)
-st.sidebar.title("Sistem Penilaian")
-menu = st.sidebar.radio("Navigasi", ["📝 Input Nilai Dosen", "📊 Rekap Admin"])
+st.sidebar.title("Menu Navigasi")
+menu = st.sidebar.radio("Pilih Halaman:", ["📝 Input Nilai Dosen", "📊 Rekapitulasi (Admin)"])
 
 # ==============================================================================
 # HALAMAN 1: INPUT NILAI DOSEN
 # ==============================================================================
 if menu == "📝 Input Nilai Dosen":
-    st.title("📝 Form Penilaian Ujian Tesis")
+    st.title("📝 Form Penilaian Tesis")
     
     if df_mhs.empty or df_dosen.empty:
-        st.error("Data Mahasiswa atau Dosen tidak ditemukan. Periksa Google Sheets Anda.")
+        st.warning("⚠️ Data mahasiswa atau dosen tidak tersedia di Google Sheets.")
     else:
-        # 1. Identitas
+        # 1. Pilih Identitas
         c1, c2 = st.columns(2)
         with c1:
-            pilih_mhs = st.selectbox("Pilih Mahasiswa", df_mhs["Nama"].tolist())
+            pilih_mhs = st.selectbox("Pilih Nama Mahasiswa", df_mhs["Nama"].tolist())
             row_mhs = df_mhs[df_mhs["Nama"] == pilih_mhs].iloc[0]
             nim_mhs = row_mhs["NIM"]
             st.success(f"**NIM:** {nim_mhs}  \n**Judul:** {row_mhs.get('Judul', '-')}")
@@ -66,11 +63,12 @@ if menu == "📝 Input Nilai Dosen":
 
         st.divider()
 
-        # 2. Form Input
+        # 2. Form Input Nilai
         with st.form("form_penilaian"):
-            st.subheader(f"Rubrik: {peran}")
+            st.subheader(f"Rubrik Penilaian: {peran}")
             col_a, col_b = st.columns(2)
             
+            # Logika Rubrik (Pembimbing vs Penguji)
             if "Pembimbing" in peran:
                 with col_a:
                     v1 = st.number_input("1. Ketrampilan & Ketelitian Kerja", 3.0, 4.0, 3.5, 0.1)
@@ -88,7 +86,7 @@ if menu == "📝 Input Nilai Dosen":
                     v4 = st.number_input("4. Penguasaan materi", 3.0, 4.0, 3.5, 0.1)
                     v5 = st.number_input("5. Kualitas penalaran", 3.0, 4.0, 3.5, 0.1)
 
-            btn_submit = st.form_submit_button("Kirim Nilai Final", type="primary")
+            btn_submit = st.form_submit_button("Kirim Nilai Sekarang", type="primary")
 
             if btn_submit:
                 rerata_nilai = (v1+v2+v3+v4+v5)/5
@@ -102,26 +100,27 @@ if menu == "📝 Input Nilai Dosen":
                 }])
                 
                 try:
-                    # Gabungkan data lama dengan data baru
+                    # Menggabungkan data rekap lama dengan input baru
                     df_update = pd.concat([df_rekap, data_baru], ignore_index=True)
-                    conn.update(worksheet="Rekap_Nilai", data=df_update)
+                    # Simpan kembali ke tab 'nilai'
+                    conn.update(worksheet="nilai", data=df_update)
                     st.balloons()
-                    st.success(f"✅ Berhasil! Nilai {rerata_nilai:.2f} tersimpan.")
+                    st.success(f"✅ Nilai untuk {pilih_mhs} berhasil disimpan!")
                 except Exception as e:
-                    st.error(f"Gagal menyimpan ke Google Sheets: {e}")
+                    st.error(f"Gagal menyimpan data: {e}")
 
 # ==============================================================================
 # HALAMAN 2: REKAPITULASI (ADMIN)
 # ==============================================================================
-elif menu == "📊 Rekap Admin":
-    st.title("📊 Rekapitulasi & Nilai Akhir")
+elif menu == "📊 Rekapitulasi (Admin)":
+    st.title("📊 Rekapitulasi Nilai Akhir")
     pw = st.sidebar.text_input("Password Admin", type="password")
     
     if pw == "kimia123":
         if df_rekap.empty:
-            st.info("Belum ada data nilai di tab 'Rekap_Nilai'.")
+            st.info("Belum ada data nilai yang masuk di tab 'nilai'.")
         else:
-            # Pivot data: 1 baris per Mahasiswa
+            # Mengelompokkan data agar 1 mahasiswa = 1 baris
             df_pivot = df_rekap.pivot_table(
                 index=["NIM", "Nama"], 
                 columns="Peran", 
@@ -129,17 +128,17 @@ elif menu == "📊 Rekap Admin":
                 aggfunc='last'
             ).reset_index()
             
-            # Gabungkan dengan nilai Seminar dari tab Daftar_Mahasiswa
+            # Gabungkan dengan nilai Seminar dari tab 'mahasiswa'
             if "Seminar" in df_mhs.columns:
                 df_final = pd.merge(df_pivot, df_mhs[["NIM", "Seminar"]], on="NIM", how="left")
                 
-                # Fungsi Hitung Bobot 8
                 def hitung_skor(row):
                     s = row.get("Seminar", 0)
                     p1 = row.get("Pembimbing I", 0)
                     p2 = row.get("Pembimbing II", 0)
                     u1 = row.get("Penguji I", 0)
                     u2 = row.get("Penguji II", 0)
+                    # Rumus Bobot 8
                     return ((s*1) + (p1*2) + (p2*2) + (u1*1.5) + (u2*1.5)) / 8
                 
                 def get_huruf(n):
@@ -148,14 +147,19 @@ elif menu == "📊 Rekap Admin":
                     elif n >= 3.41: return "A/B"
                     elif n >= 3.21: return "B+"
                     elif n >= 3.01: return "B"
-                    else: return "C/Incomplete"
+                    else: return "C/D/E"
 
                 df_final["Nilai Akhir"] = df_final.apply(hitung_skor, axis=1)
                 df_final["Huruf"] = df_final["Nilai Akhir"].apply(get_huruf)
                 
+                st.subheader("Data Hasil Ujian")
                 st.dataframe(df_final.style.format(precision=2), use_container_width=True)
+                
+                # Tombol Download CSV
+                csv = df_final.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download Hasil (CSV)", csv, "rekap_nilai.csv", "text/csv")
             else:
-                st.warning("Kolom 'Seminar' tidak ditemukan di tab Daftar_Mahasiswa.")
+                st.warning("Kolom 'Seminar' tidak ditemukan di tab 'mahasiswa'.")
                 st.dataframe(df_pivot)
     else:
-        st.warning("Masukkan password untuk melihat rekap.")
+        st.warning("Silakan masukkan password admin untuk melihat data.")
